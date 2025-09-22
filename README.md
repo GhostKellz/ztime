@@ -56,7 +56,8 @@
 ### Integration
 
 ```bash
-zig fetch --save https://github.com/ghostkellz/ztime
+zig fetch --save https://github.com/ghostkellz/ztime/archive/refs/heads/main.tar.gz
+
 ```
 
 ### Basic Usage
