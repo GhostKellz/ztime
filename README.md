@@ -53,17 +53,10 @@
 
 ## 🚀 Quick Start
 
-### Installation
+### Integration
 
-Add ztime to your `build.zig.zon`:
-
-```zig
-.dependencies = .{
-    .ztime = .{
-        .url = "https://github.com/your-username/ztime/archive/main.tar.gz",
-        .hash = "...",
-    },
-},
+```bash
+zig fetch --save https://github.com/ghostkellz/ztime
 ```
 
 ### Basic Usage
