@@ -9,6 +9,12 @@
   [![Astronomical Features](https://img.shields.io/badge/Astronomy-Solar%20%26%20Lunar-purple?logo=moon&logoColor=white)](https://github.com/your-username/ztime)
 </div>
 
+## DISCLAIMER
+
+⚠️ **EXPERIMENTAL LIBRARY - FOR LAB/PERSONAL USE** ⚠️
+
+This is an experimental library under active development. It is intended for research, learning, and personal projects. The API is subject to change!
+
 **ztime** is an advanced date and time library for Zig, providing comprehensive timezone handling, multiple calendar systems, astronomical calculations, and business day logic for high-precision timing applications.
 
 ## ✨ Features
