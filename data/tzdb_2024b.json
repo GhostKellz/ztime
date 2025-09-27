@@ -1,0 +1,47 @@
+{
+  "version": "2024b",
+  "timezones": [
+    {
+      "name": "UTC",
+      "rules": [
+        { "from": null, "offset": 0, "dst": 0, "abbr": "UTC" }
+      ]
+    },
+    {
+      "name": "America/New_York",
+      "rules": [
+        { "from": null, "offset": -18000, "dst": 0, "abbr": "EST" },
+        { "from": 1710054000, "offset": -18000, "dst": 3600, "abbr": "EDT" },
+        { "from": 1730613600, "offset": -18000, "dst": 0, "abbr": "EST" },
+        { "from": 1741503600, "offset": -18000, "dst": 3600, "abbr": "EDT" },
+        { "from": 1762063200, "offset": -18000, "dst": 0, "abbr": "EST" }
+      ]
+    },
+    {
+      "name": "Europe/London",
+      "rules": [
+        { "from": null, "offset": 0, "dst": 0, "abbr": "GMT" },
+        { "from": 1711846800, "offset": 0, "dst": 3600, "abbr": "BST" },
+        { "from": 1729990800, "offset": 0, "dst": 0, "abbr": "GMT" },
+        { "from": 1743296400, "offset": 0, "dst": 3600, "abbr": "BST" },
+        { "from": 1761440400, "offset": 0, "dst": 0, "abbr": "GMT" }
+      ]
+    },
+    {
+      "name": "Asia/Tokyo",
+      "rules": [
+        { "from": null, "offset": 32400, "dst": 0, "abbr": "JST" }
+      ]
+    },
+    {
+      "name": "Australia/Sydney",
+      "rules": [
+        { "from": null, "offset": 36000, "dst": 3600, "abbr": "AEDT" },
+        { "from": 1712419200, "offset": 36000, "dst": 0, "abbr": "AEST" },
+        { "from": 1728144000, "offset": 36000, "dst": 3600, "abbr": "AEDT" },
+        { "from": 1743868800, "offset": 36000, "dst": 0, "abbr": "AEST" },
+        { "from": 1759593600, "offset": 36000, "dst": 3600, "abbr": "AEDT" }
+      ]
+    }
+  ]
+}

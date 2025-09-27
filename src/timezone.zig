@@ -1,141 +1,57 @@
 //! IANA Timezone Database implementation
 const std = @import("std");
 const Duration = @import("root.zig").Duration;
+const generated = @import("generated/timezones.zig");
 
-pub const TZRule = struct {
-    offset_seconds: i32,
-    dst_offset_seconds: i32,
-    starts_at: i64, // Unix timestamp when this rule starts
-    ends_at: i64,   // Unix timestamp when this rule ends
-    name: []const u8,
-};
-
-pub const TimeZoneData = struct {
-    name: []const u8,
-    rules: []const TZRule,
-
-    pub fn getOffset(self: TimeZoneData, timestamp: i64) Duration {
-        // Find the applicable rule for the given timestamp
-        for (self.rules) |rule| {
-            if (timestamp >= rule.starts_at and timestamp < rule.ends_at) {
-                const total_offset = rule.offset_seconds + rule.dst_offset_seconds;
-                return Duration.fromSeconds(total_offset);
-            }
-        }
-
-        // Default to the last rule if no match found
-        if (self.rules.len > 0) {
-            const last_rule = self.rules[self.rules.len - 1];
-            const total_offset = last_rule.offset_seconds + last_rule.dst_offset_seconds;
-            return Duration.fromSeconds(total_offset);
-        }
-
-        return Duration.fromSeconds(0);
-    }
-
-    pub fn isDST(self: TimeZoneData, timestamp: i64) bool {
-        for (self.rules) |rule| {
-            if (timestamp >= rule.starts_at and timestamp < rule.ends_at) {
-                return rule.dst_offset_seconds != 0;
-            }
-        }
-        return false;
-    }
-};
-
-// IANA timezone database (simplified version with common zones)
-const TIMEZONE_DB = std.StaticStringMap(TimeZoneData).initComptime(.{
-    .{ "UTC", TimeZoneData{
-        .name = "UTC",
-        .rules = &[_]TZRule{
-            TZRule{
-                .offset_seconds = 0,
-                .dst_offset_seconds = 0,
-                .starts_at = 0,
-                .ends_at = std.math.maxInt(i64),
-                .name = "UTC",
-            },
-        },
-    }},
-    .{ "America/New_York", TimeZoneData{
-        .name = "America/New_York",
-        .rules = &[_]TZRule{
-            // EST (Standard Time)
-            TZRule{
-                .offset_seconds = -5 * 3600,
-                .dst_offset_seconds = 0,
-                .starts_at = 0,
-                .ends_at = 1583647200, // March 8, 2020 (example DST start)
-                .name = "EST",
-            },
-            // EDT (Daylight Time)
-            TZRule{
-                .offset_seconds = -5 * 3600,
-                .dst_offset_seconds = 3600,
-                .starts_at = 1583647200,
-                .ends_at = 1604210400, // November 1, 2020 (example DST end)
-                .name = "EDT",
-            },
-        },
-    }},
-    .{ "Europe/London", TimeZoneData{
-        .name = "Europe/London",
-        .rules = &[_]TZRule{
-            // GMT (Standard Time)
-            TZRule{
-                .offset_seconds = 0,
-                .dst_offset_seconds = 0,
-                .starts_at = 0,
-                .ends_at = 1585443600, // March 29, 2020 (example BST start)
-                .name = "GMT",
-            },
-            // BST (British Summer Time)
-            TZRule{
-                .offset_seconds = 0,
-                .dst_offset_seconds = 3600,
-                .starts_at = 1585443600,
-                .ends_at = 1603584000, // October 25, 2020 (example BST end)
-                .name = "BST",
-            },
-        },
-    }},
-    .{ "Asia/Tokyo", TimeZoneData{
-        .name = "Asia/Tokyo",
-        .rules = &[_]TZRule{
-            TZRule{
-                .offset_seconds = 9 * 3600,
-                .dst_offset_seconds = 0,
-                .starts_at = 0,
-                .ends_at = std.math.maxInt(i64),
-                .name = "JST",
-            },
-        },
-    }},
-    .{ "Australia/Sydney", TimeZoneData{
-        .name = "Australia/Sydney",
-        .rules = &[_]TZRule{
-            // AEST (Standard Time)
-            TZRule{
-                .offset_seconds = 10 * 3600,
-                .dst_offset_seconds = 0,
-                .starts_at = 0,
-                .ends_at = 1583053200, // March 1, 2020 (example AEDT end)
-                .name = "AEST",
-            },
-            // AEDT (Daylight Time)
-            TZRule{
-                .offset_seconds = 10 * 3600,
-                .dst_offset_seconds = 3600,
-                .starts_at = 1583053200,
-                .ends_at = 1601738400, // October 4, 2020 (example AEDT start)
-                .name = "AEDT",
-            },
-        },
-    }},
-});
+pub const TZRule = generated.TZRule;
+pub const TimeZoneData = generated.TimeZoneData;
+pub const VERSION = generated.VERSION;
+pub const FIXED_OFFSET_NAME = "UTC-offset";
 
 pub fn lookupTimeZone(name: []const u8) ?TimeZoneData {
-    return TIMEZONE_DB.get(name);
+    return generated.lookupTimeZone(name);
+}
+
+pub fn allTimeZones() []const TimeZoneData {
+    return generated.allTimeZones();
+}
+
+pub fn getOffsetSeconds(data: TimeZoneData, timestamp: i64) i32 {
+    if (data.rules.len == 0) return 0;
+
+    var selected = data.rules[0];
+    for (data.rules) |rule| {
+        if (timestamp >= rule.starts_at and timestamp < rule.ends_at) {
+            selected = rule;
+            break;
+        }
+        if (timestamp >= rule.starts_at) {
+            selected = rule;
+        }
+    }
+
+    return selected.offset_seconds + selected.dst_offset_seconds;
+}
+
+pub fn getOffset(data: TimeZoneData, timestamp: i64) Duration {
+    return Duration.fromSeconds(getOffsetSeconds(data, timestamp));
+}
+
+pub fn isDST(data: TimeZoneData, timestamp: i64) bool {
+    if (data.rules.len == 0) return false;
+
+    var selected = data.rules[0];
+    for (data.rules) |rule| {
+        if (timestamp >= rule.starts_at and timestamp < rule.ends_at) {
+            selected = rule;
+            break;
+        }
+        if (timestamp >= rule.starts_at) {
+            selected = rule;
+        }
+    }
+
+    return selected.dst_offset_seconds != 0;
 }
 
 test "IANA timezone lookup" {
@@ -149,11 +65,11 @@ test "IANA timezone lookup" {
 test "DST detection" {
     const ny = lookupTimeZone("America/New_York").?;
 
-    // Test EST period (no DST)
-    const est_timestamp: i64 = 1577836800; // 2020-01-01 00:00:00 UTC
-    try std.testing.expect(!ny.isDST(est_timestamp));
+    // Test EST period (no DST) - 2024-01-01 00:00:00 UTC
+    const est_timestamp: i64 = 1704067200;
+    try std.testing.expect(!isDST(ny, est_timestamp));
 
-    // Test EDT period (DST)
-    const edt_timestamp: i64 = 1590969600; // 2020-06-01 00:00:00 UTC
-    try std.testing.expect(ny.isDST(edt_timestamp));
+    // Test EDT period (DST) - 2024-06-01 00:00:00 UTC
+    const edt_timestamp: i64 = 1717200000;
+    try std.testing.expect(isDST(ny, edt_timestamp));
 }

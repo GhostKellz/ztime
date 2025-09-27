@@ -91,7 +91,7 @@ pub const TimeZone = struct {
     pub fn getOffset(self: TimeZone, when: DateTime) Duration {
         // For IANA timezones, use the database
         if (timezone.lookupTimeZone(self.name)) |tz_data| {
-            return tz_data.getOffset(@divFloor(when.timestamp_ns, std.time.ns_per_s));
+            return timezone.getOffset(tz_data, @divFloor(when.timestamp_ns, std.time.ns_per_s));
         }
         // Fallback to static offset
         return Duration.fromSeconds(self.offset_seconds);
@@ -99,7 +99,7 @@ pub const TimeZone = struct {
 
     pub fn isDST(self: TimeZone, when: DateTime) bool {
         if (timezone.lookupTimeZone(self.name)) |tz_data| {
-            return tz_data.isDST(@divFloor(when.timestamp_ns, std.time.ns_per_s));
+            return timezone.isDST(tz_data, @divFloor(when.timestamp_ns, std.time.ns_per_s));
         }
         return false;
     }
@@ -221,7 +221,33 @@ pub fn utcNow() DateTime {
 
 pub fn parseISO8601(input: []const u8) !DateTime {
     const fmt_mod = @import("format.zig");
-    return fmt_mod.parseDateTime(input, "%Y-%m-%dT%H:%M:%SZ", std.testing.allocator);
+    const allocator = std.heap.page_allocator;
+    const has_fraction = std.mem.indexOfScalar(u8, input, '.') != null;
+
+    const patterns_with_fraction = [_][]const u8{
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%dT%H:%M:%S.%f%Z",
+        "%Y-%m-%dT%H:%M:%S.%f",
+    };
+
+    const patterns_without_fraction = [_][]const u8{
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S%Z",
+        "%Y-%m-%dT%H:%M:%S",
+    };
+
+    const patterns = if (has_fraction) patterns_with_fraction[0..] else patterns_without_fraction[0..];
+
+    var last_err: anyerror = error.InvalidFormat;
+    for (patterns) |pattern| {
+        const parsed = fmt_mod.parseDateTime(input, pattern, allocator) catch |err| {
+            last_err = err;
+            continue;
+        };
+        return parsed;
+    }
+
+    return last_err;
 }
 
 pub fn formatISO8601(dt: DateTime, allocator: Allocator) ![]u8 {

@@ -12,6 +12,7 @@ pub fn build(b: *std.Build) void {
     // means any target is allowed, and the default is native. Other options
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
+    const host_target = b.resolveTargetQuery(.{});
     // Standard optimization options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
@@ -40,6 +41,28 @@ pub fn build(b: *std.Build) void {
         // which requires us to specify a target.
         .target = target,
     });
+
+    const tzdb_generator = b.addExecutable(.{
+        .name = "tzdb_generator",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/tzdb_generator.zig"),
+            .target = host_target,
+            .optimize = optimize,
+        }),
+    });
+
+    const run_tzdb_generator = b.addRunArtifact(tzdb_generator);
+    run_tzdb_generator.addArg("--input");
+    run_tzdb_generator.addFileArg(b.path("data/tzdb_2024b.json"));
+    run_tzdb_generator.addArg("--output");
+    run_tzdb_generator.addFileArg(b.path("src/generated/timezones.zig"));
+    run_tzdb_generator.setCwd(b.path("."));
+
+    const tzdb_step = b.step("tzdb", "Regenerate timezone database from tzdb 2024b");
+    tzdb_step.dependOn(&run_tzdb_generator.step);
+
+    // Ensure tzdb data is refreshed before building other artifacts
+    b.getInstallStep().dependOn(&run_tzdb_generator.step);
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
