@@ -1,6 +1,8 @@
 //! ztime: Advanced Date/Time Library for Zig
 //! Provides timezone handling, calendar systems, and astronomical calculations
 const std = @import("std");
+const builtin = @import("builtin");
+const errors = @import("errors.zig");
 const Allocator = std.mem.Allocator;
 
 // Re-export all public modules
@@ -69,7 +71,7 @@ pub const TimeZone = struct {
     name: []const u8,
     offset_seconds: i32,
 
-    pub fn fromName(name: []const u8) !TimeZone {
+    pub fn fromName(name: []const u8) errors.TimeZoneError!TimeZone {
         // Use IANA timezone database
         if (timezone.lookupTimeZone(name)) |tz_data| {
             // Get current offset (simplified - would need current time for DST)
@@ -85,7 +87,7 @@ pub const TimeZone = struct {
         } else if (std.mem.eql(u8, name, "PST")) {
             return TimeZone{ .name = name, .offset_seconds = -8 * 3600 };
         }
-        return error.UnknownTimeZone;
+        return errors.TimeZoneError.UnknownTimeZone;
     }
 
     pub fn getOffset(self: TimeZone, when: DateTime) Duration {
@@ -110,7 +112,7 @@ pub const DateTime = struct {
     timezone: TimeZone,
 
     pub fn now(tz: TimeZone) DateTime {
-        const ns = std.time.nanoTimestamp();
+            const ns = systemTimestampNs();
         return DateTime{
             .timestamp_ns = @intCast(ns),
             .timezone = tz,
@@ -250,6 +252,41 @@ pub fn parseISO8601(input: []const u8) !DateTime {
     return last_err;
 }
 
+fn systemTimestampNs() i64 {
+    return switch (builtin.os.tag) {
+        .windows => systemTimestampWindows(),
+        else => systemTimestampPosix(),
+    };
+}
+
+fn systemTimestampPosix() i64 {
+    const ts = std.posix.clock_gettime(std.posix.CLOCK.REALTIME) catch |err| clockUnavailable(err);
+    const seconds: i64 = ts.sec;
+    const nanos: i64 = @intCast(ts.nsec);
+    return seconds * std.time.ns_per_s + nanos;
+}
+
+fn systemTimestampWindows() i64 {
+    const windows = std.os.windows;
+    var ft: windows.FILETIME = undefined;
+    if (@hasDecl(windows.kernel32, "GetSystemTimePreciseAsFileTime")) {
+        windows.kernel32.GetSystemTimePreciseAsFileTime(&ft);
+    } else {
+        windows.kernel32.GetSystemTimeAsFileTime(&ft);
+    }
+
+    const ticks = (@as(u64, ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+    const epoch_offset: u64 = 116444736000000000; // 100ns between 1601-01-01 and 1970-01-01
+    if (ticks < epoch_offset) std.debug.panic("ztime: system clock before Unix epoch", .{});
+    const unix_ticks = ticks - epoch_offset;
+    const unix_ns = unix_ticks * 100;
+    return @intCast(unix_ns);
+}
+
+fn clockUnavailable(err: anyerror) noreturn {
+    std.debug.panic("ztime: system clock unavailable ({s})", .{@errorName(err)});
+}
+
 pub fn formatISO8601(dt: DateTime, allocator: Allocator) ![]u8 {
     return dt.format("%Y-%m-%dT%H:%M:%SZ", Locale.DEFAULT, allocator);
 }
@@ -276,4 +313,31 @@ test "Duration operations" {
     const sixty_minutes = Duration.fromMinutes(60);
 
     try std.testing.expectEqual(one_hour.nanoseconds, sixty_minutes.nanoseconds);
+}
+
+test "integration: timezone calendar business astronomy" {
+    const allocator = std.testing.allocator;
+    const dt = try format.parseDateTime("2024-07-03T09:30:00-0400", "%Y-%m-%dT%H:%M:%S%z", allocator);
+
+    // Calendar projection
+    const greg = calendar.Calendar.init(.gregorian);
+    const date = greg.dateFromUnixTimestamp(dt.toUnixTimestamp());
+    try std.testing.expectEqual(@as(i32, 2024), date.year);
+    try std.testing.expectEqual(@as(u8, 7), date.month);
+
+    // Timezone offset consistency using generated tzdb
+    const tz_data = try timezone.requireTimeZone("America/New_York");
+    const offset_seconds = timezone.getOffsetSeconds(tz_data, dt.toUnixTimestamp());
+    try std.testing.expectEqual(@as(i32, -4 * 3600), offset_seconds);
+
+    // Business calendar coordination
+    const business_cal = business.BusinessCalendar.US_FEDERAL;
+    const next_business = business_cal.getNextBusinessDay(dt);
+    try std.testing.expect(next_business.timestamp_ns > dt.timestamp_ns);
+
+    // Astronomy coupling
+    const coords = astronomy.Coordinates{ .latitude = 40.7128, .longitude = -74.0060 };
+    const solar = dt.getSolarEvents(coords);
+    try std.testing.expect(solar.sunrise.timestamp_ns < solar.sunset.timestamp_ns);
+    try std.testing.expect(solar.day_length.nanoseconds > 10 * std.time.ns_per_hour);
 }

@@ -1,6 +1,7 @@
 //! IANA Timezone Database implementation
 const std = @import("std");
 const Duration = @import("root.zig").Duration;
+const errors = @import("errors.zig");
 const generated = @import("generated/timezones.zig");
 
 pub const TZRule = generated.TZRule;
@@ -10,6 +11,10 @@ pub const FIXED_OFFSET_NAME = "UTC-offset";
 
 pub fn lookupTimeZone(name: []const u8) ?TimeZoneData {
     return generated.lookupTimeZone(name);
+}
+
+pub fn requireTimeZone(name: []const u8) errors.TimeZoneError!TimeZoneData {
+    return lookupTimeZone(name) orelse errors.TimeZoneError.UnknownTimeZone;
 }
 
 pub fn allTimeZones() []const TimeZoneData {

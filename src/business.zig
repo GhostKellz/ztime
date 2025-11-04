@@ -3,6 +3,7 @@ const std = @import("std");
 const DateTime = @import("root.zig").DateTime;
 const Duration = @import("root.zig").Duration;
 const calendar = @import("calendar.zig");
+const errors = @import("errors.zig");
 
 pub const HolidayType = enum {
     fixed,          // Same date every year (e.g., Christmas)
@@ -182,6 +183,10 @@ pub const BusinessCalendar = struct {
         }
 
         return null;
+    }
+
+    pub fn requireHoliday(self: BusinessCalendar, dt: DateTime) errors.BusinessError![]const u8 {
+        return self.isHoliday(dt) orelse errors.BusinessError.UnknownHoliday;
     }
 };
 

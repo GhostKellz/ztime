@@ -9,6 +9,7 @@ const timezone = @import("timezone.zig");
 const errors = @import("errors.zig");
 
 const ascii = std.ascii;
+const math = std.math;
 
 pub const FormatError = errors.FormatError;
 pub const ParseError = errors.ParseError;
@@ -38,6 +39,67 @@ const FormatToken = struct {
     specifier: FormatSpecifier,
     literal_text: []const u8,
 };
+
+fn appendPaddedInt(list: *std.ArrayList(u8), allocator: Allocator, value: anytype, width: usize) !void {
+    const info = @typeInfo(@TypeOf(value));
+    const signed_value: i64 = switch (info) {
+        .int => |int_info| blk: {
+            if (int_info.signedness == .signed) {
+                const maybe_signed = math.cast(i64, value);
+                if (maybe_signed) |signed| {
+                    break :blk signed;
+                } else {
+                    std.debug.panic("integer overflow converting to i64", .{});
+                }
+            }
+            const unsigned = blk_unsigned: {
+                const maybe_unsigned = math.cast(u64, value);
+                if (maybe_unsigned) |u| {
+                    break :blk_unsigned u;
+                }
+                std.debug.panic("integer overflow converting to u64", .{});
+            };
+            break :blk @as(i64, @intCast(unsigned));
+        },
+        .comptime_int => blk: {
+            const tmp: comptime_int = value;
+            break :blk @as(i64, tmp);
+        },
+        else => @compileError("appendPaddedInt requires an integer value"),
+    };
+
+    var magnitude: u64 = if (signed_value >= 0) @as(u64, @intCast(signed_value)) else blk_abs: {
+        const shifted = -(signed_value + 1);
+        const base = @as(u64, @intCast(shifted));
+        break :blk_abs base + 1;
+    };
+    var buffer: [32]u8 = undefined;
+    var index: usize = buffer.len;
+
+    if (magnitude == 0) {
+        index -= 1;
+        buffer[index] = '0';
+    } else {
+        while (magnitude > 0) {
+            index -= 1;
+            const digit: u8 = @intCast(magnitude % 10);
+            buffer[index] = '0' + digit;
+            magnitude /= 10;
+        }
+    }
+
+    while (buffer.len - index < width) {
+        index -= 1;
+        buffer[index] = '0';
+    }
+
+    if (signed_value < 0) {
+        index -= 1;
+        buffer[index] = '-';
+    }
+
+    try list.appendSlice(allocator, buffer[index..]);
+}
 
 const LocaleData = struct {
     month_names_long: [12][]const u8,
@@ -132,49 +194,33 @@ pub fn formatDateTime(allocator: Allocator, dt: DateTime, format_str: []const u8
     for (tokens) |token| {
         switch (token.specifier) {
             .year_4digit => {
-                const text = try std.fmt.allocPrint(allocator, "{d:0>4}", .{date.year});
-                defer allocator.free(text);
-                try result.appendSlice(allocator, text);
+                try appendPaddedInt(&result, allocator, date.year, 4);
             },
             .year_2digit => {
-                const text = try std.fmt.allocPrint(allocator, "{d:0>2}", .{@mod(date.year, 100)});
-                defer allocator.free(text);
-                try result.appendSlice(allocator, text);
+                try appendPaddedInt(&result, allocator, @mod(date.year, 100), 2);
             },
             .month_number => {
-                const text = try std.fmt.allocPrint(allocator, "{d:0>2}", .{date.month});
-                defer allocator.free(text);
-                try result.appendSlice(allocator, text);
+                try appendPaddedInt(&result, allocator, date.month, 2);
             },
             .month_name_long => try result.appendSlice(allocator, locale_data.month_names_long[date.month - 1]),
             .month_name_short => try result.appendSlice(allocator, locale_data.month_names_short[date.month - 1]),
             .day_of_month => {
-                const text = try std.fmt.allocPrint(allocator, "{d:0>2}", .{date.day});
-                defer allocator.free(text);
-                try result.appendSlice(allocator, text);
+                try appendPaddedInt(&result, allocator, date.day, 2);
             },
             .day_of_week_long => try result.appendSlice(allocator, locale_data.weekday_names_long[weekday]),
             .day_of_week_short => try result.appendSlice(allocator, locale_data.weekday_names_short[weekday]),
             .hour_24 => {
-                const text = try std.fmt.allocPrint(allocator, "{d:0>2}", .{hours});
-                defer allocator.free(text);
-                try result.appendSlice(allocator, text);
+                try appendPaddedInt(&result, allocator, hours, 2);
             },
             .hour_12 => {
                 const hour_12 = if (hours == 0) 12 else if (hours > 12) hours - 12 else hours;
-                const text = try std.fmt.allocPrint(allocator, "{d:0>2}", .{hour_12});
-                defer allocator.free(text);
-                try result.appendSlice(allocator, text);
+                try appendPaddedInt(&result, allocator, hour_12, 2);
             },
             .minute => {
-                const text = try std.fmt.allocPrint(allocator, "{d:0>2}", .{minutes});
-                defer allocator.free(text);
-                try result.appendSlice(allocator, text);
+                try appendPaddedInt(&result, allocator, minutes, 2);
             },
             .second => {
-                const text = try std.fmt.allocPrint(allocator, "{d:0>2}", .{seconds});
-                defer allocator.free(text);
-                try result.appendSlice(allocator, text);
+                try appendPaddedInt(&result, allocator, seconds, 2);
             },
             .am_pm => {
                 const am_pm_index: usize = if (hours < 12) 0 else 1;
@@ -346,7 +392,8 @@ pub fn parseDateTimeLocale(input: []const u8, format_str: []const u8, locale: Lo
             resolved_timezone = TimeZone{ .name = timezone.FIXED_OFFSET_NAME, .offset_seconds = tz_offset_seconds };
         }
     } else if (components.tz_offset_seconds != null) {
-        resolved_timezone = TimeZone{ .name = timezone.FIXED_OFFSET_NAME, .offset_seconds = tz_offset_seconds };
+        const name = if (tz_offset_seconds == 0) "UTC" else timezone.FIXED_OFFSET_NAME;
+        resolved_timezone = TimeZone{ .name = name, .offset_seconds = tz_offset_seconds };
     }
 
     const timestamp_seconds = total_seconds - @as(i64, tz_offset_seconds);

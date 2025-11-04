@@ -87,6 +87,13 @@ fn gregorianFromUnixTimestamp(timestamp: i64) Date {
         }
     }
 
+    // Support timestamps before the epoch by rewinding years
+    while (remaining_days < 0) {
+        year -= 1;
+        const days_in_year: i64 = if (isLeapYear(year)) 366 else 365;
+        remaining_days += days_in_year;
+    }
+
     // Month and day calculation
     var month: u8 = 1;
     while (month <= 12) {
@@ -375,4 +382,68 @@ test "Islamic calendar approximation" {
 
     // Islamic year should be around 1441 AH for 2020 CE
     try std.testing.expect(islamic_date.year > 1400 and islamic_date.year < 1500);
+}
+
+test "gregorian round trip conversions" {
+    const cal = Calendar.init(.gregorian);
+    const cases = [_]Date{
+        .{ .year = 1970, .month = 1, .day = 1 },
+        .{ .year = 2000, .month = 2, .day = 29 },
+        .{ .year = 2024, .month = 12, .day = 31 },
+    };
+
+    for (cases) |case| {
+        try std.testing.expect(case.isValid());
+        const ts = cal.unixTimestampFromDate(case);
+        const decoded = cal.dateFromUnixTimestamp(ts);
+        try std.testing.expectEqual(case.year, decoded.year);
+        try std.testing.expectEqual(case.month, decoded.month);
+        try std.testing.expectEqual(case.day, decoded.day);
+    }
+}
+
+test "julian conversion alignment" {
+    const greg = Calendar.init(.gregorian);
+    const julian = Calendar.init(.julian);
+
+    const greg_date = Date{ .year = 2024, .month = 3, .day = 1 };
+    const julian_date = Date{ .year = 2024, .month = 2, .day = 17 };
+
+    const greg_ts = greg.unixTimestampFromDate(greg_date);
+    const jul_ts = julian.unixTimestampFromDate(julian_date);
+    try std.testing.expectEqual(greg_ts, jul_ts);
+
+    const back_to_jul = julian.dateFromUnixTimestamp(greg_ts);
+    try std.testing.expectEqual(julian_date.year, back_to_jul.year);
+    try std.testing.expectEqual(julian_date.month, back_to_jul.month);
+    try std.testing.expectEqual(julian_date.day, back_to_jul.day);
+}
+
+test "approximate calendar round trips" {
+    const day_seconds: i64 = std.time.s_per_day;
+    const scenarios = [_]struct {
+        cal_type: CalendarType,
+        tolerance: i64,
+    }{
+        .{ .cal_type = .gregorian, .tolerance = 0 },
+        .{ .cal_type = .julian, .tolerance = 0 },
+        .{ .cal_type = .islamic, .tolerance = day_seconds },
+        .{ .cal_type = .hebrew, .tolerance = day_seconds * 210 },
+        .{ .cal_type = .chinese, .tolerance = day_seconds * 7 },
+    };
+
+    const timestamps = [_]i64{
+        1577836800, // 2020-01-01
+        2208988800, // 2040-01-01
+    };
+
+    for (scenarios) |scenario| {
+        const cal = Calendar.init(scenario.cal_type);
+        for (timestamps) |ts| {
+            const date = cal.dateFromUnixTimestamp(ts);
+            const round_trip = cal.unixTimestampFromDate(date);
+            const diff = if (round_trip >= ts) round_trip - ts else ts - round_trip;
+            try std.testing.expect(diff <= scenario.tolerance);
+        }
+    }
 }

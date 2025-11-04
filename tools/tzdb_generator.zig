@@ -54,14 +54,9 @@ pub fn main() !void {
     }
 
     const cwd = std.fs.cwd();
-    var input_file = try cwd.openFile(input_path.?, .{});
-    defer input_file.close();
-    const file_info = try input_file.stat();
-    const size = @as(usize, @intCast(file_info.size));
-    var input_buffer = try allocator.alloc(u8, size);
-    defer allocator.free(input_buffer);
-    const read_len = try input_file.readAll(input_buffer);
-    const input_data = input_buffer[0..read_len];
+    const max_size: usize = 32 * 1024 * 1024;
+    const input_data = try cwd.readFileAlloc(input_path.?, allocator, std.Io.Limit.limited(max_size));
+    defer allocator.free(input_data);
 
     const parsed = try std.json.parseFromSlice(RawRoot, allocator, input_data, .{});
     defer parsed.deinit();
